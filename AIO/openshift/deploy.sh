@@ -21,16 +21,16 @@
 # ONLY.
 # Prerequisites:
 # - Centos 7
-# - All hostnames specified in acumos-env.sh must be DNS-resolvable on all hosts
+# - All hostnames specified in ../acumos-env.sh must be DNS-resolvable on all hosts
 #   (entries in /etc/hosts or in an actual DNS server)
-# - For deployments behind proxies, set HTTP_PROXY and HTTPS_PROXY in acumos-env.sh
+# - For deployments behind proxies, set HTTP_PROXY and HTTPS_PROXY in ../acumos-env.sh
 # - For kubernetes based deplpyment: Kubernetes cluster deployed
 # Usage:
 # $ bash deploy.sh
 #  
 # NOTE: if redeploying with an existing Acumos database, or to upgrade an
-# existing Acumos CDS database, ensure that acumos-env.sh contains the following values
-# from acumos-env.sh as updated when the previous version was installed, as
+# existing Acumos CDS database, ensure that ../acumos-env.sh contains the following values
+# from ../acumos-env.sh as updated when the previous version was installed, as
 # these will not be updated by this script:
 #   ACUMOS_MARIADB_PASSWORD
 #   ACUMOS_MARIADB_USER_PASSWORD
@@ -87,7 +87,7 @@ function setup_prereqs() {
   log "Basic prerequisites"
 
   sudo yum -y update
-  sudo yum install -y epel-release
+  sudo rpm -Fvh https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
   sudo yum install -y docker wget git jq
 
   log "Enable docker API"
@@ -339,12 +339,12 @@ function setup_acumos() {
   docker_login https://nexus3.acumos.org:10004
   docker_login https://nexus3.acumos.org:10003
   docker_login https://nexus3.acumos.org:10002
-  touch ~/.docker
-  sudo chown -R $USER:$USER ~/.docker
+  touch $HOME/.docker
+  sudo chown -R $USER:$USER $HOME/.docker
 
   setup_elk
 
-    if [[ $(oc get namespaces | grep -c 'acumos ') == 1 ]]; then
+    if [[ $(oc project acumos | grep -c Already) == 1 ]]; then
       trap '' ERR
       echo "Stop any running Acumos component services under OpenShift"
       oc delete service -n acumos azure-client-service cds-service \
@@ -359,26 +359,27 @@ function setup_acumos() {
         portal-be portal-fe onboarding msg dsce kubernetes-client federation \
         kong nexus docker filebeat metricbeat elasticsearch logstash kibana
 
-      echo "Delete acumos image pull secret from kubernetes"
+      echo "Delete acumos image pull secret from OpenShift"
       oc delete secret -n acumos acumos-registry
 
-      echo "Delete namespace acumos from kubernetes"
-      oc delete namespace acumos
-      while oc get namespace acumos; do
-        echo "Waiting 10 seconds for namespace acumos to be deleted"
+      echo "Delete project acumos from OpenShift"
+      oc delete project acumos
+      while oc project acumos; do
+        echo "Waiting 10 seconds for project acumos to be deleted"
         sleep 10
       done
       trap 'FAIL' ERR
     fi
 
-    log "Create namespace acumos"
-    while ! oc create namespace acumos; do
-      log "oc API is not yet ready ... waiting 10 seconds"
+    log "Create project acumos"
+    oc new-project acumos
+    while ! oc project acumos; do
+      log "OpenShift API is not yet ready ... waiting 10 seconds"
       sleep 10
     done
 
     log "Create k8s secret for image pulling from docker"
-    b64=$(cat ~/.docker/config.json | base64 -w 0)
+    b64=$(cat $HOME/.docker/config.json | base64 -w 0)
     cat <<EOF >acumos-registry.yaml
 apiVersion: v1
 kind: Secret
@@ -392,18 +393,18 @@ EOF
 
     oc create -f acumos-registry.yaml
 
-    log "Deploy Acumos kubernetes-based components"
-    log "Set variable values in k8s templates"
+    log "Deploy Acumos OpenShift-based components"
+    log "Set variable values in OpenShift templates"
     # Variables for platform dependencies (not core components)
     depvars="ACUMOS_DOCKER_API_HOST ACUMOS_DOCKER_API_PORT ACUMOS_DOCKER_API_PORT ACUMOS_DOCKER_MODEL_PORT ACUMOS_DOCKER_PROXY_HOST ACUMOS_DOCKER_PROXY_PORT ACUMOS_DOMAIN ACUMOS_ELK_ELASTICSEARCH_HOST ACUMOS_ELK_ELASTICSEARCH_PORT ACUMOS_ELK_ES_JAVA_HEAP_MAX_SIZE ACUMOS_ELK_ES_JAVA_HEAP_MIN_SIZE ACUMOS_ELK_KIBANA_HOST ACUMOS_ELK_KIBANA_NODEPORT ACUMOS_ELK_KIBANA_PORT ACUMOS_ELK_LOGSTASH_HOST ACUMOS_ELK_LOGSTASH_PORT ACUMOS_ELK_LS_JAVA_HEAP_MAX_SIZE ACUMOS_ELK_LS_JAVA_HEAP_MIN_SIZE ACUMOS_ELK_NODEPORT ACUMOS_FILEBEAT_PORT ACUMOS_HOST ACUMOS_KONG_ADMIN_PORT ACUMOS_KONG_ADMIN_SSL_PORT ACUMOS_KONG_DB_PORT ACUMOS_KONG_PROXY_PORT ACUMOS_KONG_PROXY_SSL_PORT ACUMOS_MARIADB_HOST ACUMOS_MARIADB_PORT ACUMOS_MARIADB_USER_PASSWORD ACUMOS_METRICBEAT_PORT ACUMOS_NEXUS_API_PORT ACUMOS_NEXUS_HOST ACUMOS_PROJECT_NEXUS_PASSWORD ACUMOS_PROJECT_NEXUS_USERNAME ACUMOS_RO_USER ACUMOS_RO_USER_PASSWORD ACUMOS_RW_USER ACUMOS_RW_USER_PASSWORD"
 
     # Variables for platform core components
     compvars="ACUMOS_AZURE_CLIENT_PORT ACUMOS_CDS_DB ACUMOS_CDS_PASSWORD ACUMOS_CDS_PORT ACUMOS_CDS_USER ACUMOS_CMS_PORT ACUMOS_DATA_BROKER_INTERNAL_PORT ACUMOS_DATA_BROKER_PORT ACUMOS_DEPLOYED_SOLUTION_PORT ACUMOS_DEPLOYED_VM_PASSWORD ACUMOS_DEPLOYED_VM_USER ACUMOS_DSCE_PORT ACUMOS_FEDERATION_PORT ACUMOS_KEYPASS ACUMOS_KUBERNETES_CLIENT_PORT ACUMOS_MICROSERVICE_GENERATION_PORT ACUMOS_ONBOARDING_PORT ACUMOS_OPERATOR_ID ACUMOS_PORTAL_BE_PORT ACUMOS_PORTAL_FE_PORT ACUMOS_PROBE_PORT HTTP_PROXY HTTPS_PROXY"
     set +x
-    mkdir -p ~/deploy/kubernetes
-    cp -r kubernetes/* ~/deploy/kubernetes/.
+    mkdir -p $HOME/deploy/kubernetes
+    cp -r ../kubernetes/* $HOME/deploy/kubernetes/.
     vs="$depvars $compvars"
-    for f in  ~/deploy/kubernetes/service/*.yaml  ~/deploy/kubernetes/deployment/*.yaml; do
+    for f in  $HOME/deploy/kubernetes/service/*.yaml  $HOME/deploy/kubernetes/deployment/*.yaml; do
       for v in $vs ; do
         eval vv=\$$v
         sed -i -- "s/<$v>/$vv/g" $f
@@ -411,44 +412,44 @@ EOF
     done
     set -x
 
-    log "Set image references in k8s templates"
-    sed -i -- "s~<AZURE_CLIENT_IMAGE>~$AZURE_CLIENT_IMAGE~g"  ~/deploy/kubernetes/deployment/azure-client-deployment.yaml
-    sed -i -- "s~<BLUEPRINT_ORCHESTRATOR_IMAGE>~$BLUEPRINT_ORCHESTRATOR_IMAGE~g"  ~/deploy/kubernetes/deployment/azure-client-deployment.yaml
-    sed -i -- "s~<COMMON_DATASERVICE_IMAGE>~$COMMON_DATASERVICE_IMAGE~g"  ~/deploy/kubernetes/deployment/common-data-svc-deployment.yaml
-    sed -i -- "s~<DATABROKER_CSVBROKER_IMAGE>~$DATABROKER_CSVBROKER_IMAGE~g"  ~/deploy/kubernetes/deployment/dsce-deployment.yaml
-    sed -i -- "s~<DATABROKER_ZIPBROKER_IMAGE>~$DATABROKER_ZIPBROKER_IMAGE~g"  ~/deploy/kubernetes/deployment/dsce-deployment.yaml
-    sed -i -- "s~<DESIGNSTUDIO_IMAGE>~$DESIGNSTUDIO_IMAGE~g"  ~/deploy/kubernetes/deployment/dsce-deployment.yaml
-    sed -i -- "s~<ELASTICSEARCH_IMAGE>~$ELASTICSEARCH_IMAGE~g"  ~/deploy/kubernetes/deployment/elk-deployment.yaml
-    sed -i -- "s~<FEDERATION_IMAGE>~$FEDERATION_IMAGE~g"  ~/deploy/kubernetes/deployment/federation-deployment.yaml
-    sed -i -- "s~<FILEBEAT_IMAGE>~$FILEBEAT_IMAGE~g"  ~/deploy/kubernetes/deployment/filebeat-deployment.yaml
-    sed -i -- "s~<FILEBEAT_IMAGE>~$FILEBEAT_IMAGE~g"  ~/deploy/kubernetes/deployment/filebeat-deployment.yaml
-    sed -i -- "s~<KIBANA_IMAGE>~$KIBANA_IMAGE~g"  ~/deploy/kubernetes/deployment/elk-deployment.yaml
-    sed -i -- "s~<KUBERNETES_CLIENT_IMAGE>~$KUBERNETES_CLIENT_IMAGE~g"  ~/deploy/kubernetes/deployment/kubernetes-client-deployment.yaml
-    sed -i -- "s~<BLUEPRINT_ORCHESTRATOR_IMAGE>~$BLUEPRINT_ORCHESTRATOR_IMAGE~g"  ~/deploy/kubernetes/deployment/kubernetes-client-deployment.yaml
-    sed -i -- "s~<PROTO_VIEWER_IMAGE>~$PROTO_VIEWER_IMAGE~g"  ~/deploy/kubernetes/deployment/kubernetes-client-deployment.yaml
-    sed -i -- "s~<LOGSTASH_IMAGE>~$LOGSTASH_IMAGE~g"  ~/deploy/kubernetes/deployment/elk-deployment.yaml
-    sed -i -- "s~<METRICBEAT_IMAGE>~$METRICBEAT_IMAGE~g"  ~/deploy/kubernetes/deployment/metricbeat-deployment.yaml
-    sed -i -- "s~<MICROSERVICE_GENERATION_IMAGE>~$MICROSERVICE_GENERATION_IMAGE~g"  ~/deploy/kubernetes/deployment/microservice-generation-deployment.yaml
-    sed -i -- "s~<ONBOARDING_BASE_IMAGE>~$ONBOARDING_BASE_IMAGE~g"  ~/deploy/kubernetes/deployment/microservice-generation-deployment.yaml
-    sed -i -- "s~<ONBOARDING_BASE_IMAGE>~$ONBOARDING_BASE_IMAGE~g"  ~/deploy/kubernetes/deployment/onboarding-deployment.yaml
-    sed -i -- "s~<ONBOARDING_IMAGE>~$ONBOARDING_IMAGE~g"  ~/deploy/kubernetes/deployment/onboarding-deployment.yaml
-    sed -i -- "s~<PORTAL_BE_IMAGE>~$PORTAL_BE_IMAGE~g"  ~/deploy/kubernetes/deployment/portal-be-deployment.yaml
-    sed -i -- "s~<PORTAL_CMS_IMAGE>~$PORTAL_CMS_IMAGE~g"  ~/deploy/kubernetes/deployment/cms-deployment.yaml
-    sed -i -- "s~<PORTAL_FE_IMAGE>~$PORTAL_FE_IMAGE~g"  ~/deploy/kubernetes/deployment/portal-fe-deployment.yaml
+    log "Set image references in OpenShift templates"
+    sed -i -- "s~<AZURE_CLIENT_IMAGE>~$AZURE_CLIENT_IMAGE~g"  $HOME/deploy/kubernetes/deployment/azure-client-deployment.yaml
+    sed -i -- "s~<BLUEPRINT_ORCHESTRATOR_IMAGE>~$BLUEPRINT_ORCHESTRATOR_IMAGE~g"  $HOME/deploy/kubernetes/deployment/azure-client-deployment.yaml
+    sed -i -- "s~<COMMON_DATASERVICE_IMAGE>~$COMMON_DATASERVICE_IMAGE~g"  $HOME/deploy/kubernetes/deployment/common-data-svc-deployment.yaml
+    sed -i -- "s~<DATABROKER_CSVBROKER_IMAGE>~$DATABROKER_CSVBROKER_IMAGE~g" $HOME/deploy/kubernetes/deployment/dsce-deployment.yaml
+    sed -i -- "s~<DATABROKER_ZIPBROKER_IMAGE>~$DATABROKER_ZIPBROKER_IMAGE~g"  $HOME/deploy/kubernetes/deployment/dsce-deployment.yaml
+    sed -i -- "s~<DESIGNSTUDIO_IMAGE>~$DESIGNSTUDIO_IMAGE~g"  $HOME/deploy/kubernetes/deployment/dsce-deployment.yaml
+    sed -i -- "s~<ELASTICSEARCH_IMAGE>~$ELASTICSEARCH_IMAGE~g"  $HOME/deploy/kubernetes/deployment/elk-deployment.yaml
+    sed -i -- "s~<FEDERATION_IMAGE>~$FEDERATION_IMAGE~g"  $HOME/deploy/kubernetes/deployment/federation-deployment.yaml
+    sed -i -- "s~<FILEBEAT_IMAGE>~$FILEBEAT_IMAGE~g"  $HOME/deploy/kubernetes/deployment/filebeat-deployment.yaml
+    sed -i -- "s~<FILEBEAT_IMAGE>~$FILEBEAT_IMAGE~g"  $HOME/deploy/kubernetes/deployment/filebeat-deployment.yaml
+    sed -i -- "s~<KIBANA_IMAGE>~$KIBANA_IMAGE~g"  $HOME/deploy/kubernetes/deployment/elk-deployment.yaml
+    sed -i -- "s~<KUBERNETES_CLIENT_IMAGE>~$KUBERNETES_CLIENT_IMAGE~g"  $HOME/deploy/kubernetes/deployment/kubernetes-client-deployment.yaml
+    sed -i -- "s~<BLUEPRINT_ORCHESTRATOR_IMAGE>~$BLUEPRINT_ORCHESTRATOR_IMAGE~g"  $HOME/deploy/kubernetes/deployment/kubernetes-client-deployment.yaml
+    sed -i -- "s~<PROTO_VIEWER_IMAGE>~$PROTO_VIEWER_IMAGE~g"  $HOME/deploy/kubernetes/deployment/kubernetes-client-deployment.yaml
+    sed -i -- "s~<LOGSTASH_IMAGE>~$LOGSTASH_IMAGE~g"  $HOME/deploy/kubernetes/deployment/elk-deployment.yaml
+    sed -i -- "s~<METRICBEAT_IMAGE>~$METRICBEAT_IMAGE~g"  $HOME/deploy/kubernetes/deployment/metricbeat-deployment.yaml
+    sed -i -- "s~<MICROSERVICE_GENERATION_IMAGE>~$MICROSERVICE_GENERATION_IMAGE~g"  $HOME/deploy/kubernetes/deployment/microservice-generation-deployment.yaml
+    sed -i -- "s~<ONBOARDING_BASE_IMAGE>~$ONBOARDING_BASE_IMAGE~g"  $HOME/deploy/kubernetes/deployment/microservice-generation-deployment.yaml
+    sed -i -- "s~<ONBOARDING_BASE_IMAGE>~$ONBOARDING_BASE_IMAGE~g"  $HOME/deploy/kubernetes/deployment/onboarding-deployment.yaml
+    sed -i -- "s~<ONBOARDING_IMAGE>~$ONBOARDING_IMAGE~g"  $HOME/deploy/kubernetes/deployment/onboarding-deployment.yaml
+    sed -i -- "s~<PORTAL_BE_IMAGE>~$PORTAL_BE_IMAGE~g"  $HOME/deploy/kubernetes/deployment/portal-be-deployment.yaml
+    sed -i -- "s~<PORTAL_CMS_IMAGE>~$PORTAL_CMS_IMAGE~g"  $HOME/deploy/kubernetes/deployment/cms-deployment.yaml
+    sed -i -- "s~<PORTAL_FE_IMAGE>~$PORTAL_FE_IMAGE~g"  $HOME/deploy/kubernetes/deployment/portal-fe-deployment.yaml
 
-    log "Deploy the k8s based components"
+    log "Deploy the OpenShift based components"
     # Create services first... see https://github.com/kubernetes/kubernetes/issues/16448
-    for f in  ~/deploy/kubernetes/service/*.yaml ; do
+    for f in  $HOME/deploy/kubernetes/service/*.yaml ; do
       log "Creating service from $f"
       oc create -f $f
     done
-    for f in  ~/deploy/kubernetes/deployment/*.yaml ; do
+    for f in  $HOME/deploy/kubernetes/deployment/*.yaml ; do
       log "Creating deployment from $f"
       oc create -f $f
     done
 
   log "Customize aio-cms-host.yaml"
-  sed -i -- "s~<ACUMOS_DOMAIN>~$ACUMOS_DOMAIN~g" aio-cms-host.yaml
+  sed -i -- "s~<ACUMOS_DOMAIN>~$ACUMOS_DOMAIN~g" ../aio-cms-host.yaml
 }
 
 # Setup server cert, key, and keystore for the Kong reverse proxy
@@ -463,14 +464,14 @@ function setup_keystore() {
   rm -fr /var/acumos/certs/*
 
   log "Create self-signing CA"
-  # Customize openssl.cnf as this is needed to set CN (vs command options below)
-  sed -i -- "s/<acumos-domain>/$ACUMOS_DOMAIN/" openssl.cnf
-  sed -i -- "s/<acumos-host>/$ACUMOS_HOST/" openssl.cnf
+  # Customize ../openssl.cnf as this is needed to set CN (vs command options below)
+  sed -i -- "s/<acumos-domain>/$ACUMOS_DOMAIN/" ../openssl.cnf
+  sed -i -- "s/<acumos-host>/$ACUMOS_HOST/" ../openssl.cnf
 
   openssl genrsa -des3 -out /var/acumos/certs/acumosCA.key -passout pass:$ACUMOS_KEYPASS 4096
 
   openssl req -x509 -new -nodes -key /var/acumos/certs/acumosCA.key -sha256 -days 1024 \
-   -config openssl.cnf -out /var/acumos/certs/acumosCA.crt -passin pass:$ACUMOS_KEYPASS \
+   -config ../openssl.cnf -out /var/acumos/certs/acumosCA.crt -passin pass:$ACUMOS_KEYPASS \
    -subj "/C=US/ST=Unspecified/L=Unspecified/O=Acumos/OU=Acumos/CN=$ACUMOS_DOMAIN"
 
   log "Create server certificate key"ACUMOS-1598
@@ -486,7 +487,7 @@ function setup_keystore() {
   log "Sign the CSR with the acumos CA"
   openssl x509 -req -in /var/acumos/certs/acumos.csr -CA /var/acumos/certs/acumosCA.crt \
     -CAkey /var/acumos/certs/acumosCA.key -CAcreateserial -passin pass:$ACUMOS_KEYPASS \
-    -extfile openssl.cnf -out /var/acumos/certs/acumos.crt -days 500 -sha256
+    -extfile ../openssl.cnf -out /var/acumos/certs/acumos.crt -days 500 -sha256
 
   log "Create PKCS12 format keystore with acumos server cert"
   openssl pkcs12 -export -in /var/acumos/certs/acumos.crt -passin pass:$ACUMOS_KEYPASS \
@@ -569,55 +570,55 @@ function setup_federation() {
 }
 
 export WORK_DIR=$(pwd)
-log "Reset acumos-env.sh"
-sed -i -- '/DEPLOYED_UNDER/d' acumos-env.sh
+log "Reset ../acumos-env.sh"
+sed -i -- '/DEPLOYED_UNDER/d' ../acumos-env.sh
 
 if [[ "$1" == "k8s" ]]; then DEPLOYED_UNDER=k8s
 else DEPLOYED_UNDER=docker
 fi
-echo "DEPLOYED_UNDER=\"$DEPLOYED_UNDER\"" >>acumos-env.sh
-echo "export DEPLOYED_UNDER" >>acumos-env.sh
-source acumos-env.sh
+echo "DEPLOYED_UNDER=\"$DEPLOYED_UNDER\"" >>../acumos-env.sh
+echo "export DEPLOYED_UNDER" >>../acumos-env.sh
+source ../acumos-env.sh
 
 # Create the following only if deploying with a new DB
 if [[ "$ACUMOS_CDS_PREVIOUS_VERSION" == "" ]]; then
-  sed -i -- '/ACUMOS_CDS_PASSWORD/d' acumos-env.sh
-  sed -i -- '/ACUMOS_KEYPASS/d' acumos-env.sh
-  sed -i -- '/ACUMOS_MARIADB_PASSWORD/d' acumos-env.sh
-  sed -i -- '/ACUMOS_MARIADB_USER_PASSWORD/d' acumos-env.sh
-  sed -i -- '/ACUMOS_RO_USER_PASSWORD/d' acumos-env.sh
-  sed -i -- '/ACUMOS_RW_USER_PASSWORD/d' acumos-env.sh
+  sed -i -- '/ACUMOS_CDS_PASSWORD/d' ../acumos-env.sh
+  sed -i -- '/ACUMOS_KEYPASS/d' ../acumos-env.sh
+  sed -i -- '/ACUMOS_MARIADB_PASSWORD/d' ../acumos-env.sh
+  sed -i -- '/ACUMOS_MARIADB_USER_PASSWORD/d' ../acumos-env.sh
+  sed -i -- '/ACUMOS_RO_USER_PASSWORD/d' ../acumos-env.sh
+  sed -i -- '/ACUMOS_RW_USER_PASSWORD/d' ../acumos-env.sh
   ACUMOS_MARIADB_PASSWORD=$(uuidgen)
-  echo "ACUMOS_MARIADB_PASSWORD=\"$ACUMOS_MARIADB_PASSWORD\"" >>acumos-env.sh
-  echo "export ACUMOS_MARIADB_PASSWORD" >>acumos-env.sh
+  echo "ACUMOS_MARIADB_PASSWORD=\"$ACUMOS_MARIADB_PASSWORD\"" >>../acumos-env.sh
+  echo "export ACUMOS_MARIADB_PASSWORD" >>../acumos-env.sh
   ACUMOS_MARIADB_USER_PASSWORD=$(uuidgen)
-  echo "ACUMOS_MARIADB_USER_PASSWORD=\"$ACUMOS_MARIADB_USER_PASSWORD\"" >>acumos-env.sh
-  echo "export ACUMOS_MARIADB_USER_PASSWORD" >>acumos-env.sh
+  echo "ACUMOS_MARIADB_USER_PASSWORD=\"$ACUMOS_MARIADB_USER_PASSWORD\"" >>../acumos-env.sh
+  echo "export ACUMOS_MARIADB_USER_PASSWORD" >>../acumos-env.sh
 
   ACUMOS_RO_USER_PASSWORD=$(uuidgen)
-  echo "ACUMOS_RO_USER_PASSWORD=\"$ACUMOS_RO_USER_PASSWORD\"" >>acumos-env.sh
-  echo "export ACUMOS_RO_USER_PASSWORD" >>acumos-env.sh
+  echo "ACUMOS_RO_USER_PASSWORD=\"$ACUMOS_RO_USER_PASSWORD\"" >>../acumos-env.sh
+  echo "export ACUMOS_RO_USER_PASSWORD" >>../acumos-env.sh
   ACUMOS_RW_USER_PASSWORD=$(uuidgen)
-  echo "ACUMOS_RW_USER_PASSWORD=\"$ACUMOS_RW_USER_PASSWORD\"" >>acumos-env.sh
-  echo "export ACUMOS_RW_USER_PASSWORD" >>acumos-env.sh
+  echo "ACUMOS_RW_USER_PASSWORD=\"$ACUMOS_RW_USER_PASSWORD\"" >>../acumos-env.sh
+  echo "export ACUMOS_RW_USER_PASSWORD" >>../acumos-env.sh
   ACUMOS_CDS_PASSWORD=$(uuidgen)
-  echo "ACUMOS_CDS_PASSWORD=\"$ACUMOS_CDS_PASSWORD\"" >>acumos-env.sh
-  echo "export ACUMOS_CDS_PASSWORD" >>acumos-env.sh
+  echo "ACUMOS_CDS_PASSWORD=\"$ACUMOS_CDS_PASSWORD\"" >>../acumos-env.sh
+  echo "export ACUMOS_CDS_PASSWORD" >>../acumos-env.sh
   ACUMOS_KEYPASS=$(uuidgen)
-  echo "ACUMOS_KEYPASS=$ACUMOS_KEYPASS" >>acumos-env.sh
-  echo "export ACUMOS_KEYPASS" >>acumos-env.sh
+  echo "ACUMOS_KEYPASS=$ACUMOS_KEYPASS" >>../acumos-env.sh
+  echo "export ACUMOS_KEYPASS" >>../acumos-env.sh
 fi
 
 if [[ "$ACUMOS_DOCKER_PROXY_USERNAME" == "" ]]; then
   export ACUMOS_DOCKER_PROXY_USERNAME=$(uuidgen)
-  echo "ACUMOS_DOCKER_PROXY_USERNAME=$ACUMOS_DOCKER_PROXY_USERNAME" >>acumos-env.sh
-  echo "export ACUMOS_DOCKER_PROXY_USERNAME" >>acumos-env.sh
+  echo "ACUMOS_DOCKER_PROXY_USERNAME=$ACUMOS_DOCKER_PROXY_USERNAME" >>../acumos-env.sh
+  echo "export ACUMOS_DOCKER_PROXY_USERNAME" >>../acumos-env.sh
   export ACUMOS_DOCKER_PROXY_PASSWORD=$(uuidgen)
-  echo "ACUMOS_DOCKER_PROXY_PASSWORD=$ACUMOS_DOCKER_PROXY_PASSWORD" >>acumos-env.sh
-  echo "export ACUMOS_DOCKER_PROXY_PASSWORD" >>acumos-env.sh
+  echo "ACUMOS_DOCKER_PROXY_PASSWORD=$ACUMOS_DOCKER_PROXY_PASSWORD" >>../acumos-env.sh
+  echo "export ACUMOS_DOCKER_PROXY_PASSWORD" >>../acumos-env.sh
 fi
 
-source acumos-env.sh
+source ../acumos-env.sh
 
 if [[ "$ACUMOS_CDS_PREVIOUS_VERSION" == "" ]]; then
   setup_prereqs

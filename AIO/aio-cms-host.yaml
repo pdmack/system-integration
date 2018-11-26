@@ -1,9 +1,9 @@
 /AIO:
   jcr:primaryType: hst:virtualhostgroup
   jcr:uuid: 8a90ff1e-4028-4192-88c8-9108357a6bf0
-  hst:cmslocation: http://<ACUMOS_DOMAIN>:9080/cms
+  hst:cmslocation: http://xci09.lab.eng.rdu2.redhat.com:9080/cms
   hst:defaultport: 9080
-  /<ACUMOS_DOMAIN>:
+  /xci09.lab.eng.rdu2.redhat.com:
     jcr:primaryType: hst:virtualhost
     jcr:uuid: 6cec3454-8d26-4f7c-8c8f-1258e92f176b
     hst:schemeagnostic: true
